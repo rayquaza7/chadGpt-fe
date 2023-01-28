@@ -1,14 +1,19 @@
 import { Analytics } from "@vercel/analytics/react";
-import type { AppProps } from "next/app";
-import "@vercel/examples-ui/globals.css";
+import { SessionProvider } from "next-auth/react";
 
-function App({ Component, pageProps }: AppProps) {
+import type { AppProps } from "next/app";
+import type { Session } from "next-auth";
+
+// Use of the <SessionProvider> is mandatory to allow components that call
+// `useSession()` anywhere in your application to access the `session` object.
+export default function App({
+  Component,
+  pageProps: { session, ...pageProps },
+}: AppProps<{ session: Session }>) {
   return (
-    <>
+    <SessionProvider session={session}>
       <Component {...pageProps} />
       <Analytics />
-    </>
+    </SessionProvider>
   );
 }
-
-export default App;
