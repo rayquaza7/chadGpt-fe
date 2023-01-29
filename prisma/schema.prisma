@@ -7,10 +7,19 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-
 model questions {
   index BigInt?
   data  String?
   docId String?
   id    BigInt  @id
+
+  @@index([index], map: "ix_questions_index")
+}
+
+model notes {
+  id            Int      @id @default(autoincrement())
+  email         String?
+  questions     String[]
+  transcription String?
+  title         String?
 }

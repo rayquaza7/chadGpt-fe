@@ -1,50 +1,66 @@
 import { PrismaClient } from "@prisma/client";
+import { unstable_getServerSession } from "next-auth";
 import { Configuration, OpenAIApi } from "openai";
 import { PineconeClient } from "pinecone-client";
+import { authOptions } from "./auth/[...nextauth]";
 
 const configuration = new Configuration({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const openai = new OpenAIApi(configuration);
-const pinecone = new PineconeClient({
-  apiKey: process.env.PINECONE_API_KEY,
-  baseUrl: process.env.PINECONE_BASE_URL,
-});
-const prisma = new PrismaClient();
+export const openai = new OpenAIApi(configuration);
+
+export const prisma = new PrismaClient();
 
 export default async function handler(req: any, res: any) {
+  const session = await unstable_getServerSession(req, res, authOptions);
+
+  // if no session then return 401
+  if (!session) {
+    res.status(401).json({ error: "Not authenticated" });
+    res.end();
+  }
+  const pinecone = new PineconeClient({
+    apiKey: process.env.PINECONE_API_KEY,
+    baseUrl: process.env.PINECONE_BASE_URL,
+    namespace: session!.user!.email || "",
+  });
+
   const prevUserQuestion = req.body.prevUserQuestion;
   const prevBotAnswer = req.body.prevBotAnswer;
   const question = req.body.message;
   let prompt = "";
 
   if (question == "ask me") {
-    // select random id from the questions table
-    const random_id = await prisma.questions.aggregate({
-      _count: {
-        id: true,
+    // get all notes for a user
+    const notes = await prisma.notes.findMany({
+      where: {
+        email: session!.user!.email || "",
       },
     });
-    const random_id_int = Math.floor(Math.random() * random_id._count.id);
-    const random_question = await prisma.questions.findFirst({
-      skip: random_id_int,
-    });
-    res.status(200).json({ text: random_question?.data });
-    return;
+    // get all questions from all notes
+    let questions: string[] = [];
+    for (const note of notes) {
+      questions = questions.concat(note.questions);
+    }
+    // get random question
+    const random_id = Math.floor(Math.random() * questions.length);
+    const random_question = questions[random_id];
+    res.status(200).json({ text: random_question });
+    res.end();
   } else if (prevUserQuestion == "ask me") {
     prompt =
       "Question:\n" +
       prevBotAnswer +
       "\nAnswer:\n" +
       prevUserQuestion +
-      "\n\nGive constructive feedback and evaluate the answer.\n";
+      "\n\nevaluate the answer based on the context. Give the correct answer in your feedback. Feedback:\n";
     // get embedding for the question
-    const res_pinecone = await openai.createEmbedding({
+    const openaiembedding = await openai.createEmbedding({
       model: "text-embedding-ada-002",
       input: prevBotAnswer,
     });
-    const embedding = res_pinecone["data"]["data"][0]["embedding"];
+    const embedding = openaiembedding["data"]["data"][0]["embedding"];
     // get top 10 most relevant info from pinceone
     const relevant = await pinecone.query({
       topK: 10,
